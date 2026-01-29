@@ -1,0 +1,8 @@
+{
+  "boundary_sha256": "55310f42a895c083d94fad73bc887895ba1aa9e349a907c130f1a76286ecf7e7",
+  "exp_id": "margin_cliff_v1",
+  "exp_version": "v1",
+  "grid_sha256": "9e3927f49b21eb1d6cbd3dcfaee41e5fedb8276b70dac01fda187d2c7a9be693",
+  "spec_sha256": "377f72648a15880863f13032eaed9d0cfe3504369237a78474d6978ea9343204",
+  "status": "COMPLETE"
+}

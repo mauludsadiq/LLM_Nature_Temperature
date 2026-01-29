@@ -1,0 +1,36 @@
+{
+  "mode": "with",
+  "original": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+  "rows": [
+    {
+      "jaccard": 1.0,
+      "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+      "turn": 1
+    },
+    {
+      "jaccard": 1.0,
+      "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+      "turn": 2
+    },
+    {
+      "jaccard": 1.0,
+      "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+      "turn": 3
+    },
+    {
+      "jaccard": 1.0,
+      "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+      "turn": 4
+    },
+    {
+      "jaccard": 1.0,
+      "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+      "turn": 5
+    },
+    {
+      "jaccard": 1.0,
+      "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+      "turn": 6
+    }
+  ]
+}

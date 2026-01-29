@@ -1,0 +1,42 @@
+{
+  "mode": "without",
+  "original": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+  "rows": [
+    {
+      "context_frac": 1.0,
+      "jaccard": 0.0,
+      "paragraph": "-1 point 1 is \"precisely\" considered -2 points 2-3 aren't...",
+      "turn": 1
+    },
+    {
+      "context_frac": 0.7,
+      "jaccard": 0.0,
+      "paragraph": "3 points are correct without duplicating each other; 4 will just add +5 or else subtract 5(*)",
+      "turn": 2
+    },
+    {
+      "context_frac": 0.4,
+      "jaccard": 0.028985507246376812,
+      "paragraph": "This is very helpful when I am trying something which isn't related enough with this work so my mind would have been blown! It's such great information because someone forgot about me and now they only need 2 questions\u2026 \"Is that you\". This post got made many times before we finished by myself from personal notes or at",
+      "turn": 3
+    },
+    {
+      "context_frac": 0.25,
+      "jaccard": 0.030303030303030304,
+      "paragraph": "- Use simple language, but still make your sentence clear and concise! Also consider creating grammar like this:-",
+      "turn": 4
+    },
+    {
+      "context_frac": 0.15,
+      "jaccard": 0.0,
+      "paragraph": "0 days, 2 hours",
+      "turn": 5
+    },
+    {
+      "context_frac": 0.08,
+      "jaccard": 0.0425531914893617,
+      "paragraph": "I hope this gets some reading but not as many comments, so long we're getting things right at hand and they all look exactly like how you've said them before or something!",
+      "turn": 6
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "C": 0.1,
+    "C_target_prompt_len": 102,
+    "delta_c": null,
+    "tau": 0.9
+  },
+  {
+    "C": 0.5,
+    "C_target_prompt_len": 511,
+    "delta_c": null,
+    "tau": 0.9
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "boundary_surface_sha256": "f941ac27692212ed1c7b5bad5f17b2bbc9844a5d63c8e9dd4151271ac7610a76",
+  "exp_id": "phase_surface_v1",
+  "exp_version": "v1",
+  "grid_sha256": "b98af237227b09d1d0ff74b420f5e61fbf5a27d2e7967b108a88eef6ffea6aa0",
+  "hazard_surface_sha256": "0811b6426b83029a9fc51cfcf852d9aeb4f1a60742779bbf4c679bf51859f2a9",
+  "interaction_fit_sha256": "afcd1b846d9ee515ddc19e5183a08bf9a2671d46de49749cbc498a46fa775313",
+  "spec_sha256": "b8964b776c764e8d420b5dda4f79878d6f930a1e64a418998a0b73d2e028f0ec",
+  "status": "COMPLETE"
+}

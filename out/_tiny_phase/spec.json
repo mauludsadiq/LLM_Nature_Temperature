@@ -1,0 +1,33 @@
+{
+  "base_prompt": "Answer with",
+  "context_fracs": [
+    0.1,
+    0.5
+  ],
+  "deltas": [
+    0.0,
+    0.5
+  ],
+  "device": "mps",
+  "exp_id": "phase_surface_v1",
+  "exp_version": "v1",
+  "filler_text": " .",
+  "hazard_delta": 0.0,
+  "horizon_steps": 4,
+  "model_name": "gpt2",
+  "n_max_positions": 1024,
+  "n_trials": 1,
+  "seed": 0,
+  "tau_survive": 0.9,
+  "temps": [
+    0.7,
+    1.0
+  ],
+  "token_correct": " yes",
+  "token_distract": " no",
+  "token_ids": {
+    "correct": 3763,
+    "distract": 645
+  },
+  "use_kv_cache": false
+}

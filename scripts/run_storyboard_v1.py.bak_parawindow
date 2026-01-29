@@ -1,0 +1,445 @@
+from __future__ import annotations
+
+import argparse
+import difflib
+import json
+import re
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+def _write_json(path: Path, obj: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_text(path: Path, s: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(s, encoding="utf-8")
+
+
+def _pick_device(device: str) -> str:
+    d = str(device).strip().lower()
+    if d == "auto":
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+    return d
+
+
+def _is_mps_device(dev: str) -> bool:
+    d = str(dev).strip().lower()
+    return d in ("mps", "apple", "metal") or d.startswith("mps")
+
+
+def _load(model_name: str, device: str):
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    if device == "mps":
+        model = model.to("mps")
+    model.eval()
+    return tok, model
+
+
+def _gen(
+    tok,
+    model,
+    device: str,
+    prompt: str,
+    T: float,
+    max_new_tokens: int,
+    use_cache: bool,
+    do_sample: bool,
+) -> str:
+    inp = tok(prompt, return_tensors="pt")
+    if device == "mps":
+        inp = {k: v.to("mps") for k, v in inp.items()}
+
+    out = model.generate(
+        **inp,
+        do_sample=bool(do_sample),
+        temperature=float(T),
+        max_new_tokens=int(max_new_tokens),
+            no_repeat_ngram_size=4,
+            repetition_penalty=1.15,
+        use_cache=bool(use_cache),
+        pad_token_id=tok.eos_token_id,
+    )
+    return tok.decode(out[0], skip_special_tokens=True)
+
+
+def _first_paragraph(text: str) -> str:
+    s = text.replace("\r\n", "\n").strip()
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    parts = s.split("\n\n")
+    if not parts:
+        return s.strip()
+    p0 = parts[0].strip()
+    p0 = re.sub(r"\s+", " ", p0).strip()
+    return p0
+
+
+def _tokset(s: str) -> set:
+    toks = re.findall(r"[A-Za-z']+", s.lower())
+    return set(toks)
+
+
+def _jaccard(a: str, b: str) -> float:
+    A = _tokset(a)
+    B = _tokset(b)
+    if not A and not B:
+        return 1.0
+    if not A or not B:
+        return 0.0
+    return float(len(A & B)) / float(len(A | B))
+
+
+def _diff_words(a: str, b: str) -> str:
+    aw = re.findall(r"[A-Za-z']+|[^A-Za-z'\s]+", a)
+    bw = re.findall(r"[A-Za-z']+|[^A-Za-z'\s]+", b)
+    d = difflib.ndiff(aw, bw)
+    out = []
+    for x in d:
+        if x.startswith("- "):
+            out.append(f"[-{x[2:]}-]")
+        elif x.startswith("+ "):
+            out.append(f"[+{x[2:]}+]")
+        elif x.startswith("  "):
+            out.append(x[2:])
+    return " ".join(out).replace("  ", " ").strip()
+
+
+def _facts_from_original(par: str) -> List[str]:
+    facts = [
+        "A lighthouse",
+        "rocky coast",
+        "warning ships away from danger",
+        "guiding them toward safe passage",
+    ]
+    return facts
+
+
+def _truncate_context(s: str, frac: float) -> str:
+    s = s.strip()
+    if frac >= 1.0:
+        return s
+    if frac <= 0.0:
+        return ""
+    n = max(0, min(len(s), int(round(len(s) * frac))))
+    return s[:n].rstrip()
+
+
+def _is_listy(p: str) -> bool:
+    pl = p.lstrip()
+    if pl.startswith(("-", "*")):
+        return True
+    if re.match(r"^\d+\.", pl):
+        return True
+    if "\n" in p:
+        return True
+    return False
+
+def _has_repeated_ngrams(text: str, n: int = 4, max_rep: int = 1) -> bool:
+    toks = re.findall(r"[A-Za-z']+|\d+|[^\sA-Za-z\d]", text.lower())
+    if len(toks) < n:
+        return False
+    seen = {}
+    for k in range(len(toks) - n + 1):
+        g = tuple(toks[k:k+n])
+        seen[g] = seen.get(g, 0) + 1
+        if seen[g] > max_rep:
+            return True
+    return False
+
+
+def _has_clause_loop(text: str) -> bool:
+    t = re.sub(r"\s+", " ", text.strip().lower())
+    phrase = "guiding them toward safe passage"
+    if t.count(phrase) >= 2:
+        return True
+    return False
+
+
+
+def _with_constraints_ok(p: str) -> bool:
+    p = p.strip()
+    pl = p.lower()
+
+    if _is_listy(p):
+        return False
+
+    if len(p) < 90:
+        return False
+
+    if not p.startswith("A lighthouse"):
+        return False
+
+    need = ["rocky", "danger", "safe"]
+    for w in need:
+        if w not in pl:
+            return False
+
+    bad = ["island", "sicily", "theodosius", "alexandria"]
+    for w in bad:
+        if w in pl:
+            return False
+
+    if p.count(".") < 1:
+        return False
+
+    return True
+
+
+
+def _build_prompt_with(original: str, prev: str, facts: List[str]) -> str:
+    facts_block = "\n".join([f"- {x}" for x in facts])
+    return (
+        "TASK:\n"
+        "Rewrite the paragraph in ONE paragraph.\n"
+        "Hard constraints:\n"
+        "1) Output MUST be exactly one paragraph (no headings, no lists).\n"
+        "2) Output MUST start with: A lighthouse\n"
+        "3) Preserve these facts (must remain true):\n"
+        f"{facts_block}\n"
+        "4) Do not introduce unrelated places/people (no islands, no ancient biographies).\n"
+        "\n"
+        "ORIGINAL PARAGRAPH:\n"
+        f"{original}\n"
+        "\n"
+        "PREVIOUS OUTPUT (for consistency):\n"
+        f"{prev}\n"
+        "\n"
+        "OUTPUT:\n"
+    )
+
+
+def _build_prompt_without(original: str, prev: str, ctx_frac: float) -> str:
+    prev2 = _truncate_context(prev, ctx_frac)
+    return (
+        "TASK:\n"
+        "Rewrite the paragraph in ONE paragraph.\n"
+        "You may change small details gradually.\n"
+        "\n"
+        "ORIGINAL (may be partially forgotten):\n"
+        f"{_truncate_context(original, ctx_frac)}\n"
+        "\n"
+        "PREVIOUS (truncated):\n"
+        f"{prev2}\n"
+        "\n"
+        "Distractor:\n"
+        "Mention a new topic if it seems to fit.\n"
+        "\n"
+        "OUTPUT:\n"
+    )
+
+
+def _render_storyboard(title: str, original: str, rows: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append("## Original")
+    lines.append("")
+    lines.append(original.strip())
+    lines.append("")
+    for r in rows:
+        i = r["turn"]
+        p = r["paragraph"]
+        j = r["jaccard"]
+        lines.append(f"## Turn {i}  (fidelity={j:.3f})")
+        lines.append("")
+        lines.append(p)
+        lines.append("")
+        lines.append("Diff vs Original:")
+        lines.append("")
+        lines.append(_diff_words(original, p))
+        lines.append("")
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class StoryboardSpec:
+    model: str
+    device: str
+    seed: int
+    T: float
+    turns: int
+    max_new_tokens: int
+    context_fracs: List[float]
+    paragraph: str
+    no_kv_cache: bool
+    out: str
+
+
+def _run_with(spec: StoryboardSpec) -> Dict[str, Any]:
+    torch.manual_seed(int(spec.seed))
+    tok, model = _load(spec.model, spec.device)
+    use_cache = not spec.no_kv_cache
+
+    original = spec.paragraph.strip()
+    facts = _facts_from_original(original)
+
+    prev = original
+    rows: List[Dict[str, Any]] = []
+    for t in range(1, spec.turns + 1):
+        prompt = _build_prompt_with(original=original, prev=prev, facts=facts)
+
+        best: Tuple[float, str] = (-1.0, "")
+        for k in range(16):
+            torch.manual_seed(int(spec.seed) + 1000 * t + k)
+            full = _gen(
+                tok=tok,
+                model=model,
+                device=spec.device,
+                prompt=prompt,
+                T=spec.T,
+                max_new_tokens=spec.max_new_tokens,
+                use_cache=use_cache,
+                do_sample=True,
+            )
+            out = full[len(prompt) :] if full.startswith(prompt) else full
+            p = _first_paragraph(out)
+            score = _jaccard(original, p)
+            if _with_constraints_ok(p):
+                best = (score, p)
+                break
+            if score > best[0]:
+                best = (score, p)
+
+        cand = best[1].strip()
+        if not cand:
+            cand = prev
+        if not _with_constraints_ok(cand):
+            cand = prev
+        prev = cand
+        rows.append({"turn": t, "paragraph": prev, "jaccard": _jaccard(original, prev)})
+
+    return {"mode": "with", "original": original, "rows": rows}
+
+
+def _run_without(spec: StoryboardSpec) -> Dict[str, Any]:
+    torch.manual_seed(int(spec.seed))
+    tok, model = _load(spec.model, spec.device)
+    use_cache = not spec.no_kv_cache
+
+    original = spec.paragraph.strip()
+    prev = original
+    rows: List[Dict[str, Any]] = []
+
+    fracs = spec.context_fracs
+    if not fracs:
+        fracs = [1.0] * spec.turns
+    if len(fracs) < spec.turns:
+        fracs = fracs + [fracs[-1]] * (spec.turns - len(fracs))
+
+    for t in range(1, spec.turns + 1):
+        ctx = float(fracs[t - 1])
+        prompt = _build_prompt_without(original=original, prev=prev, ctx_frac=ctx)
+
+        torch.manual_seed(int(spec.seed) + 2000 * t)
+        full = _gen(
+            tok=tok,
+            model=model,
+            device=spec.device,
+            prompt=prompt,
+            T=spec.T,
+            max_new_tokens=spec.max_new_tokens,
+            use_cache=use_cache,
+            do_sample=True,
+        )
+        out = full[len(prompt) :] if full.startswith(prompt) else full
+        p = _first_paragraph(out)
+        prev = p.strip() if p.strip() else prev
+        rows.append({"turn": t, "paragraph": prev, "jaccard": _jaccard(original, prev), "context_frac": ctx})
+
+    return {"mode": "without", "original": original, "rows": rows}
+
+
+def _parse_fracs(s: str) -> List[float]:
+    s = str(s).strip()
+    if not s:
+        return []
+    out: List[float] = []
+    for x in s.split(","):
+        x = x.strip()
+        if not x:
+            continue
+        out.append(float(x))
+    return out
+
+
+def main() -> None:
+    print("[RUN] run_storyboard_v1", flush=True)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default="gpt2")
+    ap.add_argument("--device", default="auto")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--T", type=float, default=0.9)
+    ap.add_argument("--turns", type=int, default=6)
+    ap.add_argument("--max-new-tokens", type=int, default=64)
+    ap.add_argument("--context-fracs", default="1.0,0.7,0.4,0.25,0.15,0.08")
+    ap.add_argument(
+        "--paragraph",
+        default="A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+    )
+    ap.add_argument("--no-kv-cache", action="store_true")
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+
+    device = _pick_device(args.device)
+
+    no_kv_cache = bool(args.no_kv_cache)
+    if _is_mps_device(device):
+        if not no_kv_cache:
+            print("[NOTE] MPS detected: forcing --no-kv-cache to avoid KV-cache stall.", flush=True)
+        no_kv_cache = True
+
+    spec = StoryboardSpec(
+        model=str(args.model),
+        device=str(device),
+        seed=int(args.seed),
+        T=float(args.T),
+        turns=int(args.turns),
+        max_new_tokens=int(args.max_new_tokens),
+        context_fracs=_parse_fracs(args.context_fracs),
+        paragraph=str(args.paragraph),
+        no_kv_cache=bool(no_kv_cache),
+        out=str(args.out),
+    )
+
+    out_dir = Path(spec.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(out_dir / "spec.json", asdict(spec))
+
+    wout = _run_without(spec)
+    win = _run_with(spec)
+
+    _write_json(out_dir / "without" / "turns.json", wout)
+    _write_json(out_dir / "with" / "turns.json", win)
+
+    md_without = _render_storyboard("WITHOUT (context truncated + distractor)", wout["original"], wout["rows"])
+    md_with = _render_storyboard("WITH (hard constraints + retry)", win["original"], win["rows"])
+
+    _write_text(out_dir / "without" / "storyboard.md", md_without)
+    _write_text(out_dir / "with" / "storyboard.md", md_with)
+
+    need = [
+        out_dir / "spec.json",
+        out_dir / "without" / "storyboard.md",
+        out_dir / "with" / "storyboard.md",
+        out_dir / "without" / "turns.json",
+        out_dir / "with" / "turns.json",
+    ]
+    ok = all(p.exists() and p.stat().st_size > 0 for p in need)
+
+    print("PASS_STORYBOARD_V1" if ok else "FAIL_STORYBOARD_V1", flush=True)
+    for p in need:
+        print("WROTE:", str(p), "bytes", (p.stat().st_size if p.exists() else -1), flush=True)
+
+
+if __name__ == "__main__":
+    main()

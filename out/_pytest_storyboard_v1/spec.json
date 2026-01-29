@@ -1,0 +1,19 @@
+{
+  "T": 0.9,
+  "context_fracs": [
+    1.0,
+    0.7,
+    0.4,
+    0.25,
+    0.15,
+    0.08
+  ],
+  "device": "mps",
+  "max_new_tokens": 64,
+  "model": "gpt2",
+  "no_kv_cache": true,
+  "out": "out/_pytest_storyboard_v1",
+  "paragraph": "A lighthouse stands on a rocky coast, warning ships away from danger and guiding them toward safe passage.",
+  "seed": 0,
+  "turns": 6
+}
