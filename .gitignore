@@ -26,3 +26,10 @@ out/*
 !out/storyboard_v1_smoke/without/storyboard.md
 !out/storyboard_v1_smoke/without/turns.json
 
+
+# --- allow committing storyboard_v1_smoke artifacts (keep all other out/ ignored)
+out/**
+!out/
+!out/storyboard_v1_smoke/
+!out/storyboard_v1_smoke/**
+
